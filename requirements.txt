@@ -1,3 +1,4 @@
+
 fastapi
 uvicorn
 langchain
@@ -7,3 +8,4 @@ numpy
 seaborn
 matplotlib
 python-dotenv
+cohere
