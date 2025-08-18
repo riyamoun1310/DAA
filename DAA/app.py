@@ -1,3 +1,6 @@
+@app.post("/")
+async def analyze_root(dataset: UploadFile = File(...)):
+    return await analyze(dataset)
 import os
 from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
