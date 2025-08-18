@@ -1,6 +1,3 @@
-@app.post("/")
-async def analyze_root(dataset: UploadFile = File(...)):
-    return await analyze(dataset)
 import os
 from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
@@ -116,6 +113,12 @@ async def analyze(dataset: UploadFile = File(...)):
             logf.write(traceback.format_exc())
         shutil.rmtree(temp_dir)
         return JSONResponse(status_code=500, content={"error": str(e), "details": f"See {log_path}"})
+
+
+# Add POST / endpoint after analyze is defined
+@app.post("/")
+async def analyze_root(dataset: UploadFile = File(...)):
+    return await analyze(dataset)
 
 @app.get("/summary")
 def summary():
