@@ -1,0 +1,12 @@
+
+fastapi
+uvicorn
+langchain
+google-generativeai
+pandas
+numpy
+seaborn
+matplotlib
+python-dotenv
+cohere
+python-multipart
