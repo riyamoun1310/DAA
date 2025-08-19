@@ -1,5 +1,6 @@
 import os
 from fastapi import FastAPI, File, UploadFile, Form
+from typing import List
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -125,10 +126,19 @@ async def analyze(dataset: UploadFile = File(...)):
         return JSONResponse(status_code=500, content={"error": str(e), "details": f"See {log_path}"})
 
 
-# Add POST / endpoint after analyze is defined
-@app.post("/")
-async def analyze_root(dataset: UploadFile = File(...)):
-    return await analyze(dataset)
+
+# --- Agent/Router Logic ---
+async def process_task(questions_file: UploadFile, other_files: List[UploadFile]):
+    questions_content = (await questions_file.read()).decode('utf-8')
+    # Placeholder: just return the questions for now
+    return {"status": "received", "questions": questions_content.splitlines()}
+
+# New /api endpoint for dynamic tasks
+@app.post("/api")
+async def handle_analysis_request(questions_txt: UploadFile = File(...), files: List[UploadFile] = File(None)):
+    data_files = [f for f in files if f.filename != 'questions.txt'] if files else []
+    response = await process_task(questions_txt, data_files)
+    return response
 
 @app.get("/summary")
 def summary():
