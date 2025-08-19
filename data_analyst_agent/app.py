@@ -5,9 +5,13 @@ from typing import List
 
 import cohere
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.requests import Request
+from fastapi.exception_handlers import RequestValidationError
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 # Import your tool functions
 from data_analyst_agent.duckdb_tool import run_duckdb_query
@@ -20,8 +24,24 @@ load_dotenv()
 COHERE_API_KEY = os.getenv("COHERE_API_KEY")
 cohere_client = cohere.Client(COHERE_API_KEY) if COHERE_API_KEY else None
 
+
 # Initialize FastAPI app
 app = FastAPI(title="Data Analyst Agent — Riya Moun")
+
+# --- Global Exception Handlers for JSON errors ---
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": exc.detail},
+    )
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content={"error": "Validation error", "details": exc.errors()},
+    )
 
 # Add CORS middleware to allow all origins
 app.add_middleware(
@@ -101,15 +121,25 @@ def root():
         return "<h1>index.html not found</h1>"
 
 
+
+# Flexible /api endpoint: accept both 'questions_txt' and 'questions' as field names
 @app.post("/api", response_class=JSONResponse)
-async def handle_analysis_request(questions_txt: UploadFile = File(...), files: List[UploadFile] = File(None)):
+async def handle_analysis_request(
+    questions_txt: UploadFile = File(None),
+    questions: UploadFile = File(None),
+    files: List[UploadFile] = File(None)
+):
     """
     The main API endpoint that receives the user's question and data files.
     """
     try:
+        # Accept either field name for the questions file
+        questions_file = questions_txt or questions
+        if not questions_file:
+            return JSONResponse(status_code=422, content={"error": "Missing questions file."})
         # Filter out the questions.txt file from the list of data files
         data_files = [f for f in files if f.filename != 'questions.txt'] if files else []
-        response = await process_task(questions_txt, data_files)
+        response = await process_task(questions_file, data_files)
         return JSONResponse(content=response)
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": f"An unexpected error occurred: {str(e)}"})
