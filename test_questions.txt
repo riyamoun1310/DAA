@@ -1,3 +1,0 @@
-What is the average age in the dataset?
-Show the top 5 products by sales.
-Find correlation between Age and Income.

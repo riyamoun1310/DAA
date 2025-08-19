@@ -131,10 +131,26 @@ async def analyze(dataset: UploadFile = File(...)):
 # --- Agent/Router Logic ---
 async def process_task(questions_file: UploadFile, other_files: List[UploadFile]):
     questions_content = (await questions_file.read()).decode('utf-8')
-    # Simple keyword-based routing
+    # DuckDB/SQL task detection
+    if "high court judgement" in questions_content.lower() or "duckdb" in questions_content.lower() or "sql" in questions_content.lower():
+        from DAA.duckdb_tool import run_duckdb_query
+        # Example: expects a SQL query and a file
+        sql_query = questions_content  # In real use, extract the SQL from the question
+        if other_files:
+            temp_dir = tempfile.mkdtemp()
+            dataset_path = os.path.join(temp_dir, other_files[0].filename)
+            with open(dataset_path, "wb") as f:
+                shutil.copyfileobj(other_files[0].file, f)
+            result = run_duckdb_query(sql_query, dataset_path)
+            shutil.rmtree(temp_dir)
+            return result
+        else:
+            return {"error": "No dataset provided for DuckDB query."}
+    # Web scraping
     if "scrape" in questions_content.lower() and "wikipedia" in questions_content.lower():
         url = "https://en.wikipedia.org/wiki/List_of_highest-grossing_films"  # Example, extract dynamically in real use
         return await run_scraping_task(url, questions_content)
+    # General file analysis with LLM
     elif other_files:
         temp_dir = tempfile.mkdtemp()
         dataset_path = os.path.join(temp_dir, other_files[0].filename)
