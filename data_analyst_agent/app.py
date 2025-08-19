@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI, File, UploadFile, Form
 from typing import List
-from DAA.tools import run_scraping_task, run_file_analysis_task
+from data_analyst_agent.tools import run_scraping_task, run_file_analysis_task
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -40,7 +40,9 @@ app.add_middleware(
 
 @app.api_route("/", response_class=HTMLResponse, methods=["GET", "HEAD"])
 def root():
-    with open("index.html", "r", encoding="utf-8") as f:
+    import os
+    index_path = os.path.join(os.path.dirname(__file__), "index.html")
+    with open(index_path, "r", encoding="utf-8") as f:
         return f.read()
 
 
@@ -146,12 +148,12 @@ async def process_task(questions_file: UploadFile, other_files: List[UploadFile]
     if "high court judgement" in questions_content.lower() or "duckdb" in questions_content.lower() or "sql" in questions_content.lower():
         from duckdb_tool import run_duckdb_query
         sql_query = questions_content
-        if other_files:
-            temp_dir = tempfile.mkdtemp()
-            dataset_path = os.path.join(temp_dir, other_files[0].filename)
-            with open(dataset_path, "wb") as f:
-                shutil.copyfileobj(other_files[0].file, f)
-            result = run_duckdb_query(sql_query, dataset_path)
+        elif other_files:
+            # ...
+            # PASS the client to the function
+            result = await run_file_analysis_task(dataset_path, questions_content, cohere_client)
+            shutil.rmtree(temp_dir)
+            return result
             shutil.rmtree(temp_dir)
             return wrap_output(result, questions_content)
         else:

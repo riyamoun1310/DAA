@@ -45,20 +45,18 @@ def safe_exec(code: str, local_vars: dict):
     except Exception as e:
         return {"error": str(e), "traceback": traceback.format_exc()}
 
-async def run_file_analysis_task(dataset_path: str, questions: str):
+async def run_file_analysis_task(dataset_path: str, questions: str, cohere_client=None):
     try:
         df = pd.read_csv(dataset_path)
     except Exception as e:
         return {"error": f"Failed to read CSV: {str(e)}"}
-    COHERE_API_KEY = os.getenv("COHERE_API_KEY")
-    if not COHERE_API_KEY:
-        return {"error": "Cohere API key not found."}
-    co = cohere.Client(COHERE_API_KEY)
+    if not cohere_client:
+        return {"error": "Cohere client not provided or API key missing."}
     prompt = f"""
 You are a Python data analyst. Given a pandas DataFrame `df` with columns: {list(df.columns)}, answer the following question(s):\n{questions}\nWrite Python code to compute the answer. If a plot is required, save it to a BytesIO buffer as PNG and base64 encode it as 'plot_b64'. Return all answers in a dict called 'result'.\nIf the output should be a JSON array, return result as a list.\nExample:\nresult = [ ... ] or result = {{'answer': ..., 'plot_b64': ...}}
 """
     try:
-        response = co.generate(
+        response = cohere_client.generate(
             model="command",
             prompt=prompt,
             max_tokens=512,
