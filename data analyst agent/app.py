@@ -131,11 +131,21 @@ async def analyze(dataset: UploadFile = File(...)):
 # --- Agent/Router Logic ---
 async def process_task(questions_file: UploadFile, other_files: List[UploadFile]):
     questions_content = (await questions_file.read()).decode('utf-8')
+    # Helper to wrap output in correct format
+    def wrap_output(result, questions):
+        if "array" in questions.lower() or questions.strip().startswith("["):
+            if isinstance(result, dict):
+                return [result]
+            return result
+        else:
+            if isinstance(result, list):
+                return {"result": result}
+            return result
+
     # DuckDB/SQL task detection
     if "high court judgement" in questions_content.lower() or "duckdb" in questions_content.lower() or "sql" in questions_content.lower():
-        from DAA.duckdb_tool import run_duckdb_query
-        # Example: expects a SQL query and a file
-        sql_query = questions_content  # In real use, extract the SQL from the question
+        from duckdb_tool import run_duckdb_query
+        sql_query = questions_content
         if other_files:
             temp_dir = tempfile.mkdtemp()
             dataset_path = os.path.join(temp_dir, other_files[0].filename)
@@ -143,13 +153,14 @@ async def process_task(questions_file: UploadFile, other_files: List[UploadFile]
                 shutil.copyfileobj(other_files[0].file, f)
             result = run_duckdb_query(sql_query, dataset_path)
             shutil.rmtree(temp_dir)
-            return result
+            return wrap_output(result, questions_content)
         else:
             return {"error": "No dataset provided for DuckDB query."}
     # Web scraping
     if "scrape" in questions_content.lower() and "wikipedia" in questions_content.lower():
-        url = "https://en.wikipedia.org/wiki/List_of_highest-grossing_films"  # Example, extract dynamically in real use
-        return await run_scraping_task(url, questions_content)
+        url = "https://en.wikipedia.org/wiki/List_of_highest-grossing_films"
+        result = await run_scraping_task(url, questions_content)
+        return wrap_output(result, questions_content)
     # General file analysis with LLM
     elif other_files:
         temp_dir = tempfile.mkdtemp()
@@ -158,7 +169,7 @@ async def process_task(questions_file: UploadFile, other_files: List[UploadFile]
             shutil.copyfileobj(other_files[0].file, f)
         result = await run_file_analysis_task(dataset_path, questions_content)
         shutil.rmtree(temp_dir)
-        return result
+        return wrap_output(result, questions_content)
     else:
         return {"error": "Could not determine the task type.", "questions": questions_content.splitlines()}
 
