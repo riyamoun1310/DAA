@@ -12,3 +12,5 @@ cohere
 python-multipart
 
 networkx
+beautifulsoup4
+requests

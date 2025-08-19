@@ -1,6 +1,7 @@
 import os
 from fastapi import FastAPI, File, UploadFile, Form
 from typing import List
+from DAA.tools import run_scraping_task, run_file_analysis_task
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -130,8 +131,20 @@ async def analyze(dataset: UploadFile = File(...)):
 # --- Agent/Router Logic ---
 async def process_task(questions_file: UploadFile, other_files: List[UploadFile]):
     questions_content = (await questions_file.read()).decode('utf-8')
-    # Placeholder: just return the questions for now
-    return {"status": "received", "questions": questions_content.splitlines()}
+    # Simple keyword-based routing
+    if "scrape" in questions_content.lower() and "wikipedia" in questions_content.lower():
+        url = "https://en.wikipedia.org/wiki/List_of_highest-grossing_films"  # Example, extract dynamically in real use
+        return await run_scraping_task(url, questions_content)
+    elif other_files:
+        temp_dir = tempfile.mkdtemp()
+        dataset_path = os.path.join(temp_dir, other_files[0].filename)
+        with open(dataset_path, "wb") as f:
+            shutil.copyfileobj(other_files[0].file, f)
+        result = await run_file_analysis_task(dataset_path, questions_content)
+        shutil.rmtree(temp_dir)
+        return result
+    else:
+        return {"error": "Could not determine the task type.", "questions": questions_content.splitlines()}
 
 # New /api endpoint for dynamic tasks
 @app.post("/api")
