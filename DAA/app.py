@@ -8,6 +8,16 @@ import numpy as np
 import tempfile
 import shutil
 import cohere
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Initialize Cohere client if API key is present
+COHERE_API_KEY = os.getenv("COHERE_API_KEY")
+cohere_client = None
+if COHERE_API_KEY:
+    cohere_client = cohere.Client(COHERE_API_KEY)
 import networkx as nx
 import matplotlib.pyplot as plt
 import base64
