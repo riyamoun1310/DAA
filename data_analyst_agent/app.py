@@ -133,12 +133,32 @@ async def handle_analysis_request(
     The main API endpoint that receives the user's question and data files.
     """
     try:
+        # Log incoming field names for debugging
+        import logging
+        logging.basicConfig(level=logging.INFO)
+        field_info = {
+            'questions_txt': bool(questions_txt),
+            'questions': bool(questions),
+            'files_count': len(files) if files else 0,
+            'files_names': [f.filename for f in files] if files else []
+        }
+        logging.info(f"Incoming fields: {field_info}")
+
         # Accept either field name for the questions file
         questions_file = questions_txt or questions
+
+        # If neither is present, but files is present and has at least one file, use the first file as questions_file
+        data_files = []
+        if not questions_file and files and len(files) > 0:
+            questions_file = files[0]
+            data_files = files[1:] if len(files) > 1 else []
+        else:
+            # Filter out the questions.txt file from the list of data files
+            data_files = [f for f in files if f.filename != 'questions.txt'] if files else []
+
         if not questions_file:
             return JSONResponse(status_code=422, content={"error": "Missing questions file."})
-        # Filter out the questions.txt file from the list of data files
-        data_files = [f for f in files if f.filename != 'questions.txt'] if files else []
+
         response = await process_task(questions_file, data_files)
         return JSONResponse(content=response)
     except Exception as e:
