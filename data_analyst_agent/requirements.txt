@@ -13,3 +13,4 @@ networkx
 beautifulsoup4
 requests
 duckdb
+gunicorn

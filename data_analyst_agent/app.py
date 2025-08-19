@@ -1,35 +1,29 @@
 import os
-from fastapi import FastAPI, File, UploadFile, Form
-from typing import List
-from data_analyst_agent.tools import run_scraping_task, run_file_analysis_task
-from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
-import pandas as pd
-import numpy as np
 import tempfile
 import shutil
+from typing import List
+
 import cohere
 from dotenv import load_dotenv
+from fastapi import FastAPI, File, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
 
-# Load environment variables
+# Import your tool functions
+from data_analyst_agent.duckdb_tool import run_duckdb_query
+from data_analyst_agent.tools import run_file_analysis_task, run_scraping_task
+
+# Load environment variables ONCE from .env file
 load_dotenv()
 
-# Initialize Cohere client if API key is present
+# Initialize Cohere client
 COHERE_API_KEY = os.getenv("COHERE_API_KEY")
-cohere_client = None
-if COHERE_API_KEY:
-    cohere_client = cohere.Client(COHERE_API_KEY)
-import networkx as nx
-import matplotlib.pyplot as plt
-import base64
-from io import BytesIO
+cohere_client = cohere.Client(COHERE_API_KEY) if COHERE_API_KEY else None
 
-# Load environment variables
-load_dotenv()
-
+# Initialize FastAPI app
 app = FastAPI(title="Data Analyst Agent — Riya Moun")
 
+# Add CORS middleware to allow all origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -38,150 +32,90 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.api_route("/", response_class=HTMLResponse, methods=["GET", "HEAD"])
-def root():
-    import os
-    index_path = os.path.join(os.path.dirname(__file__), "index.html")
-    with open(index_path, "r", encoding="utf-8") as f:
-        return f.read()
-
-
-@app.post("/api")
-async def analyze(dataset: UploadFile = File(...)):
-    temp_dir = tempfile.mkdtemp()
-    dataset_path = None
-    log_path = os.path.join(temp_dir, "error.log")
-    try:
-        # Save uploaded file
-        dataset_path = os.path.join(temp_dir, dataset.filename)
-        with open(dataset_path, "wb") as f:
-            shutil.copyfileobj(dataset.file, f)
-
-        # Try to read as edge list (CSV with two columns: source,target)
-        try:
-            df = pd.read_csv(dataset_path)
-            if df.shape[1] < 2:
-                raise ValueError("Dataset must have at least two columns for edges.")
-            G = nx.from_pandas_edgelist(df, source=df.columns[0], target=df.columns[1])
-        except Exception as e:
-            # If not a valid edge list, try to read as adjacency matrix
-            try:
-                df = pd.read_csv(dataset_path, index_col=0)
-                G = nx.from_pandas_adjacency(df)
-            except Exception as e2:
-                raise ValueError("Dataset must be a valid edge list or adjacency matrix CSV.")
-
-        # Calculate required metrics
-        edge_count = G.number_of_edges()
-        degrees = dict(G.degree())
-        highest_degree_node = max(degrees, key=degrees.get) if degrees else None
-        average_degree = float(np.mean(list(degrees.values()))) if degrees else 0.0
-        density = nx.density(G)
-        # Shortest path from 'Alice' to 'Eve' (if both exist)
-        if 'Alice' in G and 'Eve' in G:
-            try:
-                shortest_path_alice_eve = nx.shortest_path_length(G, 'Alice', 'Eve')
-            except Exception:
-                shortest_path_alice_eve = None
-        else:
-            shortest_path_alice_eve = None
-
-        # Draw network graph
-        plt.figure(figsize=(6, 4))
-        nx.draw(G, with_labels=True, node_color='skyblue', edge_color='gray', node_size=500, font_size=8)
-        buf = BytesIO()
-        plt.tight_layout()
-        plt.savefig(buf, format='png')
-        plt.close()
-        buf.seek(0)
-        network_graph_b64 = base64.b64encode(buf.read()).decode('utf-8')
-
-        # Degree histogram
-        plt.figure(figsize=(6, 4))
-        plt.hist(list(degrees.values()), bins=range(1, max(degrees.values())+2) if degrees else [1], color='orange', edgecolor='black')
-        plt.xlabel('Degree')
-        plt.ylabel('Count')
-        plt.title('Degree Histogram')
-        buf2 = BytesIO()
-        plt.tight_layout()
-        plt.savefig(buf2, format='png')
-        plt.close()
-        buf2.seek(0)
-        degree_histogram_b64 = base64.b64encode(buf2.read()).decode('utf-8')
-
-        response = {
-            "edge_count": edge_count,
-            "highest_degree_node": highest_degree_node,
-            "average_degree": average_degree,
-            "density": density,
-            "shortest_path_alice_eve": shortest_path_alice_eve,
-            "network_graph": network_graph_b64,
-            "degree_histogram": degree_histogram_b64
-        }
-        shutil.rmtree(temp_dir)
-        return JSONResponse(content=response)
-    except Exception as e:
-        # Log error to file
-        with open(log_path, "w", encoding="utf-8") as logf:
-            import traceback
-            logf.write(traceback.format_exc())
-        shutil.rmtree(temp_dir)
-        return JSONResponse(status_code=500, content={"error": str(e), "details": f"See {log_path}"})
-
-
-
 # --- Agent/Router Logic ---
 async def process_task(questions_file: UploadFile, other_files: List[UploadFile]):
+    """
+    This is the core agent that reads the user's question and routes it to the correct tool.
+    """
     questions_content = (await questions_file.read()).decode('utf-8')
-    # Helper to wrap output in correct format
-    def wrap_output(result, questions):
-        if "array" in questions.lower() or questions.strip().startswith("["):
-            if isinstance(result, dict):
-                return [result]
-            return result
-        else:
-            if isinstance(result, list):
-                return {"result": result}
-            return result
 
-    # DuckDB/SQL task detection
-    if "high court judgement" in questions_content.lower() or "duckdb" in questions_content.lower() or "sql" in questions_content.lower():
-        from duckdb_tool import run_duckdb_query
-        sql_query = questions_content
-        elif other_files:
-            # ...
-            # PASS the client to the function
-            result = await run_file_analysis_task(dataset_path, questions_content, cohere_client)
-            shutil.rmtree(temp_dir)
-            return result
+    # Helper function to wrap the output in the correct JSON format (array or object)
+    def wrap_output(result, questions):
+        if "array" in questions.lower():
+            return result if isinstance(result, list) else [result]
+        else:
+            return result if isinstance(result, dict) else {"result": result}
+
+    # --- Tool Selection Logic ---
+
+    # 1. DuckDB/SQL task detection
+    if "high court judgement" in questions_content.lower() or "duckdb" in questions_content.lower():
+        # This task might not need a separate file, but the structure is here if needed
+        if other_files:
+            temp_dir = tempfile.mkdtemp()
+            dataset_path = os.path.join(temp_dir, other_files[0].filename)
+            with open(dataset_path, "wb") as f:
+                shutil.copyfileobj(other_files[0].file, f)
+            result = run_duckdb_query(dataset_path, questions_content)
             shutil.rmtree(temp_dir)
             return wrap_output(result, questions_content)
         else:
-            return {"error": "No dataset provided for DuckDB query."}
-    # Web scraping
-    if "scrape" in questions_content.lower() and "wikipedia" in questions_content.lower():
+            # Handle DuckDB queries that don't require file uploads
+            result = run_duckdb_query(None, questions_content)
+            return wrap_output(result, questions_content)
+
+    # 2. Web scraping task detection
+    elif "scrape" in questions_content.lower() and "wikipedia" in questions_content.lower():
         url = "https://en.wikipedia.org/wiki/List_of_highest-grossing_films"
         result = await run_scraping_task(url, questions_content)
         return wrap_output(result, questions_content)
-    # General file analysis with LLM
+
+    # 3. General file analysis with LLM (if other files are provided)
     elif other_files:
         temp_dir = tempfile.mkdtemp()
         dataset_path = os.path.join(temp_dir, other_files[0].filename)
         with open(dataset_path, "wb") as f:
             shutil.copyfileobj(other_files[0].file, f)
-        result = await run_file_analysis_task(dataset_path, questions_content)
+        
+        # Pass the initialized cohere_client to the tool
+        result = await run_file_analysis_task(dataset_path, questions_content, cohere_client)
         shutil.rmtree(temp_dir)
         return wrap_output(result, questions_content)
-    else:
-        return {"error": "Could not determine the task type.", "questions": questions_content.splitlines()}
 
-# New /api endpoint for dynamic tasks
-@app.post("/api")
+    # 4. Fallback if no specific tool is matched
+    else:
+        return {"error": "Could not determine the task type or no data file was provided for analysis."}
+
+
+# --- API Endpoints ---
+
+@app.api_route("/", response_class=HTMLResponse, methods=["GET", "HEAD"])
+def root():
+    """Serves the main HTML page."""
+    # Construct an absolute path to index.html to avoid path issues
+    index_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
+    try:
+        with open(index_path, "r", encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        return "<h1>index.html not found</h1>"
+
+
+@app.post("/api", response_class=JSONResponse)
 async def handle_analysis_request(questions_txt: UploadFile = File(...), files: List[UploadFile] = File(None)):
-    data_files = [f for f in files if f.filename != 'questions.txt'] if files else []
-    response = await process_task(questions_txt, data_files)
-    return response
+    """
+    The main API endpoint that receives the user's question and data files.
+    """
+    try:
+        # Filter out the questions.txt file from the list of data files
+        data_files = [f for f in files if f.filename != 'questions.txt'] if files else []
+        response = await process_task(questions_txt, data_files)
+        return JSONResponse(content=response)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"An unexpected error occurred: {str(e)}"})
+
 
 @app.get("/summary")
 def summary():
+    """A simple endpoint for health checks and diagnostics."""
     return {"status": "ok", "author": "Riya Moun"}
