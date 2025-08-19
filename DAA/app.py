@@ -36,7 +36,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/", response_class=HTMLResponse, methods=["GET", "HEAD"])
 def root():
     with open("index.html", "r", encoding="utf-8") as f:
         return f.read()
