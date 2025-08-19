@@ -146,12 +146,19 @@ async def handle_analysis_request(
 
         # Accept either field name for the questions file
         questions_file = questions_txt or questions
-
-        # If neither is present, but files is present and has at least one file, use the first file as questions_file
         data_files = []
+
+        # If neither is present, but files is present
         if not questions_file and files and len(files) > 0:
-            questions_file = files[0]
-            data_files = files[1:] if len(files) > 1 else []
+            # Try to find a .txt file in files
+            txt_files = [f for f in files if f.filename.lower().endswith('.txt')]
+            if txt_files:
+                questions_file = txt_files[0]
+                data_files = [f for f in files if f != questions_file]
+            else:
+                # Fallback: use first file as questions_file
+                questions_file = files[0]
+                data_files = files[1:] if len(files) > 1 else []
         else:
             # Filter out the questions.txt file from the list of data files
             data_files = [f for f in files if f.filename != 'questions.txt'] if files else []
